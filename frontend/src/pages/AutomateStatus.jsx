@@ -97,9 +97,6 @@ function AutomateStatus() {
           data={queueData}
           loading={loading}
           title="คิวกำลัง automate"
-          actionLabel="เสร็จแล้ว"
-          actionLoadingId={completingId}
-          onAction={handleCompleteRow}
           onRefresh={() => loadQueue(selectedBranch)}
         />
       </div>
