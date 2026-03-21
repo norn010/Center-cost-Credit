@@ -1,0 +1,236 @@
+-- DROP VIEW vw_ServiceProfitCreditBranch
+CREATE VIEW vw_ServiceProfitCreditBranch
+AS
+
+/* =========================
+   ใบงานปกติ
+========================= */
+SELECT 
+    A.LOCAT AS สาขา,
+    A.JOBNO AS เลขที่JOB,
+    A.TAXNO AS เลขที่ใบกำกับ,
+    A.TAXDATE AS วันที่ใบกำกับ,
+    A.JOBDATE AS วันที่JOB,
+    A.JOBTYP AS ประเภทใบงาน,
+
+    CASE 
+        WHEN (A.TAXNO='' OR A.TAXNO IS NULL) THEN A.CUSCOD 
+        ELSE C.CUSCOD 
+    END AS รหัสลูกค้า,
+
+    CM.NAME1 + ' ' + CM.NAME2 AS ชื่อลูกค้า,
+
+    A.MDLCOD AS รุ่นรถ,
+    A.STRNO AS เลขตัวถังรถ,
+    A.RLKILOMT AS เลขกิโลเมตร,
+    A.CAMPNO AS รหัสแคมเปญ,
+    A.STATUS AS สถานะJOB,
+    C.Paytyp AS ประเภทการชำระเงิน,
+    R.REGNO AS เลขทะเบียน,
+    A.CLAIM AS การเคลม,
+
+    CASE WHEN D.VATTYPE IS NOT NULL THEN D.VATTYPE ELSE E.VATTYPE END AS ประเภทภาษี,
+    CASE WHEN D.VAT IS NOT NULL THEN D.VAT ELSE E.VAT END AS อัตราภาษี,
+    D.CLAIMTYP AS ประเภทการเคลม,
+
+    -- รายได้
+    SUM(A.SERVAMT) AS มูลค่าบริการ,
+    SUM(A.OILAMT) AS มูลค่าน้ำมัน,
+    SUM(A.OUTAMT) AS มูลค่าค่าใช้จ่ายนอก,
+    SUM(A.COLAMT) AS มูลค่าค่าใช้จ่ายภายใน,
+    SUM(A.PATAMT) AS มูลค่าอะไหล่,
+    SUM(A.SERVAMT + A.OILAMT + A.OUTAMT + A.COLAMT + A.PATAMT) AS มูลค่ารวม,
+
+    -- ต้นทุน
+    SUM(A.COS_SV) AS ต้นทุนบริการ,
+    SUM((FLOOR(A.COS_OL*100))/100) AS ต้นทุนน้ำมัน,
+    SUM(A.COS_OU) AS ต้นทุนค่าใช้จ่ายนอก,
+    SUM(A.COS_CO) AS ต้นทุนค่าใช้จ่ายภายใน,
+    SUM((FLOOR(A.COS_PT*100))/100) AS ต้นทุนอะไหล่,
+
+    SUM(A.COS_SV + ((FLOOR(A.COS_OL*100))/100) + A.COS_OU + A.COS_CO + ((FLOOR(A.COS_PT*100))/100)) AS ต้นทุนรวม,
+
+    -- กำไร
+    SUM(A.SERVAMT - A.COS_SV) AS กำไรบริการ,
+    SUM(A.OILAMT - ((FLOOR(A.COS_OL*100))/100)) AS กำไรน้ำมัน,
+    SUM(A.OUTAMT - A.COS_OU) AS กำไรค่าใช้จ่ายนอก,
+    SUM(A.COLAMT - A.COS_CO) AS กำไรค่าใช้จ่ายภายใน,
+    SUM(A.PATAMT - ((FLOOR(A.COS_PT*100))/100)) AS กำไรอะไหล่,
+
+    SUM((A.SERVAMT + A.OILAMT + A.OUTAMT + A.COLAMT + A.PATAMT) -
+        (A.COS_SV + ((FLOOR(A.COS_OL*100))/100) + A.COS_OU + A.COS_CO + ((FLOOR(A.COS_PT*100))/100))) AS กำไรรวม,
+
+    '1' AS ประเภทเอกสาร,
+    'ใบงานปกติ' AS คำอธิบายเอกสาร
+
+FROM VIEW_ANALYS01 A
+LEFT JOIN L_TAXSAL C ON A.TAXNO = C.TAXNO
+LEFT JOIN L_OTHINVOI D ON A.TAXNO <> '' AND A.TAXNO = D.TAXNO
+LEFT JOIN L_JOBORDER E ON A.JOBNO = E.JOBNO
+LEFT JOIN L_SVMAST R ON E.STRNO = R.STRNO
+LEFT JOIN GWM.dbo.CUSTMAST CM
+ON (CASE WHEN (A.TAXNO='' OR A.TAXNO IS NULL) THEN A.CUSCOD ELSE C.CUSCOD END) = CM.CUSCOD
+
+WHERE 
+    A.STATUS <> 'C'
+    AND C.Paytyp = 'C'
+    AND A.JOBTYP = 'C'
+
+GROUP BY 
+A.LOCAT,A.JOBNO,A.TAXNO,A.TAXDATE,A.JOBDATE,A.JOBTYP,
+(CASE WHEN (A.TAXNO='' OR A.TAXNO IS NULL) THEN A.CUSCOD ELSE C.CUSCOD END),
+CM.NAME1,CM.NAME2,
+A.MDLCOD,A.STRNO,A.RLKILOMT,A.CAMPNO,A.STATUS,C.Paytyp,R.REGNO,A.CLAIM,
+D.VATTYPE,D.VAT,E.VATTYPE,E.VAT,D.CLAIMTYP
+
+
+UNION ALL
+
+
+/* =========================
+   ใบลดหนี้บริการ
+========================= */
+SELECT 
+    A.LOCAT,
+    A.JOBNO,
+    A.TAXNO,
+    A.TAXDATE,
+    A.JOBDATE,
+    VA.JOBTYP,
+
+    C.CUSCOD AS รหัสลูกค้า,
+    CM.NAME1 + ' ' + CM.NAME2 AS ชื่อลูกค้า,
+
+    A.MDLCOD,
+    E.STRNO,
+    E.RLKILOMT,
+    E.CAMPNO,
+    E.STATUS,
+    C.Paytyp,
+    R.REGNO,
+    A.CLAIM,
+
+    E.VATTYPE AS ประเภทภาษี,
+    E.VAT AS อัตราภาษี,
+    '' AS ประเภทการเคลม,
+
+    -- รายได้
+    SUM(-A.NETPRIC),0,0,0,0,
+    SUM(-A.NETPRIC),
+
+    -- ต้นทุน
+    0,0,0,0,0,
+    0,
+
+    -- กำไร
+    SUM(-A.NETPRIC),0,0,0,0,
+    SUM(-A.NETPRIC),
+
+    '2',
+    'ใบลดหนี้บริการ'
+
+FROM L_CN_SERV A
+JOIN L_TAXSAL C ON A.TAXNO=C.TAXNO
+LEFT JOIN L_JOBORDER E ON A.JOBNO=E.JOBNO
+LEFT JOIN L_SVMAST R ON E.STRNO = R.STRNO
+LEFT JOIN VIEW_ANALYS01 VA ON A.JOBNO = VA.JOBNO
+LEFT JOIN GWM.dbo.CUSTMAST CM ON C.CUSCOD = CM.CUSCOD
+
+WHERE 
+    C.CANDAT IS NULL
+    AND C.Paytyp = 'C'
+    AND A.TAXNO <> ''
+    AND VA.JOBTYP = 'C'
+
+GROUP BY 
+A.LOCAT,A.JOBNO,A.TAXNO,A.TAXDATE,A.JOBDATE,VA.JOBTYP,C.CUSCOD,
+CM.NAME1,CM.NAME2,
+A.MDLCOD,E.STRNO,E.RLKILOMT,E.CAMPNO,E.STATUS,
+C.Paytyp,R.REGNO,A.CLAIM,E.VATTYPE,E.VAT
+
+
+UNION ALL
+
+
+/* =========================
+   ใบคืนอะไหล่
+========================= */
+SELECT 
+    C.RTNLOC,
+    C.JOBNO,
+    C.CREDNO,
+    C.CREDDT,
+    E.RECVDATE,
+    E.REPTYPE,
+    E.CUSCOD AS รหัสลูกค้า,
+
+    CM.NAME1 + ' ' + CM.NAME2 AS ชื่อลูกค้า,
+
+    E.MDLCOD,
+    E.STRNO,
+    E.RLKILOMT,
+    E.CAMPNO,
+    E.STATUS,
+    B.PTYPE,
+    R.REGNO,
+    '' AS การเคลม,
+
+    E.VATTYPE AS ประเภทภาษี,
+    E.VAT AS อัตราภาษี,
+    '' AS ประเภทการเคลม,
+
+    -- รายได้
+    0,
+    -SUM(CASE WHEN F.GROUP1='OL' THEN A.NETPRC ELSE 0 END),
+    0,0,
+    -SUM(CASE WHEN F.GROUP1<>'OL' THEN A.NETPRC ELSE 0 END),
+    -SUM(A.NETPRC),
+
+    -- ต้นทุน
+    0,
+    -SUM(CASE WHEN F.GROUP1='OL' THEN A.COST*A.QTYRTN ELSE 0 END),
+    0,0,
+    -SUM(CASE WHEN F.GROUP1<>'OL' THEN A.COST*A.QTYRTN ELSE 0 END),
+
+    -SUM(A.COST*A.QTYRTN),
+
+    -- กำไร
+    0,
+    -SUM(CASE WHEN F.GROUP1='OL' THEN A.NETPRC-(A.COST*A.QTYRTN) ELSE 0 END),
+    0,0,
+    -SUM(CASE WHEN F.GROUP1<>'OL' THEN A.NETPRC-(A.COST*A.QTYRTN) ELSE 0 END),
+
+    -SUM(A.NETPRC-(A.COST*A.QTYRTN)),
+
+    '2',
+    'ใบคืนอะไหล่'
+
+FROM L_RT_TRAN A
+JOIN L_RT_INVOI C ON A.RTNNO=C.RTNNO
+LEFT JOIN L_AR_SERV B ON C.JOBNO=B.JOBNO AND C.TAXREFNO=B.DEVNO
+LEFT JOIN L_JOBORDER E ON C.JOBNO=E.JOBNO
+LEFT JOIN L_SVMAST R ON E.STRNO = R.STRNO
+LEFT JOIN VIEW_ANALYS01 VA ON C.JOBNO = VA.JOBNO
+LEFT JOIN GWM.dbo.CUSTMAST CM ON E.CUSCOD = CM.CUSCOD
+
+LEFT JOIN (
+    SELECT JOBNO,PARTNO,MAX(GROUP1) AS GROUP1 
+    FROM L_PARTTRAN 
+    GROUP BY JOBNO,PARTNO
+) F ON C.JOBNO=F.JOBNO AND A.PARTNO=F.PARTNO
+
+WHERE 
+    C.FLAG='7'
+    AND C.JOBNO<>'' 
+    AND C.CANDAT IS NULL
+    AND C.CREDNO<>'' 
+    AND B.PTYPE = 'C'
+    AND VA.JOBTYP = 'C'
+
+GROUP BY 
+C.RTNLOC,C.JOBNO,C.CREDNO,C.CREDDT,E.RECVDATE,E.REPTYPE,E.CUSCOD,
+CM.NAME1,CM.NAME2,
+E.MDLCOD,E.STRNO,E.RLKILOMT,E.CAMPNO,E.STATUS,
+B.PTYPE,R.REGNO,E.VATTYPE,E.VAT
+
+HAVING (SUM(A.NETPRC) <> 0 OR SUM(A.COST*A.QTYRTN) <> 0)ย
